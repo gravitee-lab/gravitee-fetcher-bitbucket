@@ -1,0 +1,215 @@
+package io.gravitee.fetcher.bitbucket; /**
+ * Copyright (C) 2015 The Gravitee team (http://gravitee.io)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.gravitee.common.http.HttpStatusCode;
+import io.gravitee.fetcher.api.Fetcher;
+import io.gravitee.fetcher.api.FetcherException;
+import io.netty.handler.codec.base64.Base64Encoder;
+import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.*;
+import io.vertx.core.http.impl.HttpUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.gravitee.fetcher.bitbucket.vertx.VertxCompletableFuture;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.util.Base64;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * @author Nicolas GERAUD (nicolas.geraud at graviteesource.com) 
+ * @author GraviteeSource Team
+ */
+public class BitbucketFetcher implements Fetcher {
+    private static final Logger logger = LoggerFactory.getLogger(BitbucketFetcher.class);
+
+    private static final String HTTPS_SCHEME = "https";
+
+    private BitbucketFetcherConfiguration bitbucketFetcherConfiguration;
+
+    @Autowired
+    private Vertx vertx;
+
+    private static final int GLOBAL_TIMEOUT = 15_000;
+
+    public BitbucketFetcher(BitbucketFetcherConfiguration bitbucketFetcherConfiguration) {
+        this.bitbucketFetcherConfiguration = bitbucketFetcherConfiguration;
+    }
+
+    @Override
+    public InputStream fetch() throws FetcherException {
+        if (bitbucketFetcherConfiguration.getBranchOrTag() == null
+                || bitbucketFetcherConfiguration.getBitbucketUrl() == null
+                || bitbucketFetcherConfiguration.getRepository() == null
+                || bitbucketFetcherConfiguration.getUsername() == null) {
+            throw new FetcherException("Some configuration attributes are null", null);
+        }
+
+        try {
+            Buffer buffer = fetchContent().join();
+            if (buffer == null || buffer.length() == 0) {
+                logger.warn("Something goes wrong, Bitbucket responds with a status 200 but the content is null.");
+                return null;
+            }
+
+            return new ByteArrayInputStream(buffer.getBytes());
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
+            throw new FetcherException("Unable to fetch Bitbucket content (" + ex.getMessage() + ")", ex);
+        }
+    }
+
+    private String getEncodedRequestUrl() throws UnsupportedEncodingException {
+        String ref = ((bitbucketFetcherConfiguration.getBranchOrTag() == null || bitbucketFetcherConfiguration.getBranchOrTag().trim().isEmpty())
+                ? "master"
+                : bitbucketFetcherConfiguration.getBranchOrTag().trim());
+
+        return bitbucketFetcherConfiguration.getBitbucketUrl().trim()
+                + "/repositories/" + bitbucketFetcherConfiguration.getUsername()
+                + "/" + bitbucketFetcherConfiguration.getRepository()
+                + "/src/" + ref
+                + "/" + bitbucketFetcherConfiguration.getFilepath();
+    }
+
+    private CompletableFuture<Buffer> fetchContent() throws Exception {
+        CompletableFuture<Buffer> future = new VertxCompletableFuture<>(vertx);
+
+        String url = getEncodedRequestUrl();
+
+        URI requestUri = URI.create(url);
+        boolean ssl = HTTPS_SCHEME.equalsIgnoreCase(requestUri.getScheme());
+
+        final HttpClientOptions options = new HttpClientOptions()
+                .setSsl(ssl)
+                .setTrustAll(true)
+                .setConnectTimeout(GLOBAL_TIMEOUT);
+
+        final HttpClient httpClient = vertx.createHttpClient(options);
+
+        httpClient.redirectHandler(resp -> {
+            try {
+                int statusCode = resp.statusCode();
+                String location = resp.getHeader(HttpHeaders.LOCATION);
+                if (location != null && (statusCode == 301 || statusCode == 302 || statusCode == 303 || statusCode == 307
+                        || statusCode == 308)) {
+                    HttpMethod m = resp.request().method();
+                    if (statusCode == 301 || statusCode == 302 || statusCode == 303) {
+                        m = HttpMethod.GET;
+                    }
+                    URI uri = HttpUtils.resolveURIReference(resp.request().absoluteURI(), location);
+                    boolean redirectSsl;
+                    int port = uri.getPort();
+                    String protocol = uri.getScheme();
+                    char chend = protocol.charAt(protocol.length() - 1);
+                    if (chend == 'p') {
+                        redirectSsl = false;
+                        if (port == -1) {
+                            port = 80;
+                        }
+                    } else if (chend == 's') {
+                        redirectSsl = true;
+                        if (port == -1) {
+                            port = 443;
+                        }
+                    } else {
+                        return null;
+                    }
+                    String requestURI = uri.getPath();
+                    if (uri.getQuery() != null) {
+                        requestURI += "?" + uri.getQuery();
+                    }
+
+                    RequestOptions requestOptions = new RequestOptions()
+                            .setHost(uri.getHost())
+                            .setPort(port)
+                            .setSsl(redirectSsl)
+                            .setURI(requestURI);
+
+                    return Future.succeededFuture(httpClient.request(m, requestOptions));
+                }
+                return null;
+            } catch (Exception e) {
+                return Future.failedFuture(e);
+            }
+        });
+
+        final int port = requestUri.getPort() != -1 ? requestUri.getPort() :
+                (HTTPS_SCHEME.equals(requestUri.getScheme()) ? 443 : 80);
+
+        try {
+            HttpClientRequest request = httpClient.request(
+                    HttpMethod.GET,
+                    port,
+                    requestUri.getHost(),
+                    requestUri.toString()
+            );
+
+            // Follow redirect since Gitlab may return a 3xx status code
+            request.setFollowRedirects(true);
+
+            request.setTimeout(GLOBAL_TIMEOUT);
+
+            if (bitbucketFetcherConfiguration.getLogin() != null && bitbucketFetcherConfiguration.getPassword() != null) {
+                String encoding = Base64.getEncoder().encodeToString(
+                        (bitbucketFetcherConfiguration.getLogin() + ":" + bitbucketFetcherConfiguration.getPassword()).getBytes());
+                request.putHeader("Authorization", "Basic " + encoding);
+            }
+
+            request.handler(response -> {
+                if (response.statusCode() == HttpStatusCode.OK_200) {
+                    response.bodyHandler(buffer -> {
+                        future.complete(buffer);
+
+                        // Close client
+                        httpClient.close();
+                    });
+                } else {
+                    future.completeExceptionally(new FetcherException("Unable to fetch '" + url + "'. Status code: " + response.statusCode() + ". Message: " + response.statusMessage(), null));
+                }
+            });
+
+            request.exceptionHandler(event -> {
+                try {
+                    future.completeExceptionally(event);
+
+                    // Close client
+                    httpClient.close();
+                } catch (IllegalStateException ise) {
+                    // Do not take care about exception when closing client
+                }
+            });
+
+            request.end();
+        } catch (Exception ex) {
+            logger.error("Unable to fetch content using HTTP", ex);
+            future.completeExceptionally(ex);
+        }
+
+        return future;
+    }
+
+    public void setVertx(Vertx vertx) {
+        this.vertx = vertx;
+    }
+}
