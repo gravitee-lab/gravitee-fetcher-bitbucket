@@ -14,21 +14,21 @@ package io.gravitee.fetcher.bitbucket; /**
  * limitations under the License.
  */
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gravitee.common.http.HttpStatusCode;
 import io.gravitee.fetcher.api.Fetcher;
 import io.gravitee.fetcher.api.FetcherException;
-import io.netty.handler.codec.base64.Base64Encoder;
+import io.gravitee.fetcher.bitbucket.vertx.VertxCompletableFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.http.impl.HttpUtils;
+import io.vertx.core.net.ProxyOptions;
+import io.vertx.core.net.ProxyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import io.gravitee.fetcher.bitbucket.vertx.VertxCompletableFuture;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -51,7 +51,28 @@ public class BitbucketFetcher implements Fetcher {
     @Autowired
     private Vertx vertx;
 
-    private static final int GLOBAL_TIMEOUT = 15_000;
+    @Value("${httpClient.timeout:10000}")
+    private int httpClientTimeout;
+    @Value("${httpClient.proxy.type:HTTP}")
+    private String httpClientProxyType;
+
+    @Value("${httpClient.proxy.http.host:#{systemProperties['http.proxyHost'] ?: 'localhost'}}")
+    private String httpClientProxyHttpHost;
+    @Value("${httpClient.proxy.http.port:#{systemProperties['http.proxyPort'] ?: 3128}}")
+    private int httpClientProxyHttpPort;
+    @Value("${httpClient.proxy.http.username:#{null}}")
+    private String httpClientProxyHttpUsername;
+    @Value("${httpClient.proxy.http.password:#{null}}")
+    private String httpClientProxyHttpPassword;
+
+    @Value("${httpClient.proxy.https.host:#{systemProperties['https.proxyHost'] ?: 'localhost'}}")
+    private String httpClientProxyHttpsHost;
+    @Value("${httpClient.proxy.https.port:#{systemProperties['https.proxyPort'] ?: 3128}}")
+    private int httpClientProxyHttpsPort;
+    @Value("${httpClient.proxy.https.username:#{null}}")
+    private String httpClientProxyHttpsUsername;
+    @Value("${httpClient.proxy.https.password:#{null}}")
+    private String httpClientProxyHttpsPassword;
 
     public BitbucketFetcher(BitbucketFetcherConfiguration bitbucketFetcherConfiguration) {
         this.bitbucketFetcherConfiguration = bitbucketFetcherConfiguration;
@@ -103,7 +124,27 @@ public class BitbucketFetcher implements Fetcher {
         final HttpClientOptions options = new HttpClientOptions()
                 .setSsl(ssl)
                 .setTrustAll(true)
-                .setConnectTimeout(GLOBAL_TIMEOUT);
+                .setMaxPoolSize(1)
+                .setKeepAlive(false)
+                .setTcpKeepAlive(false)
+                .setConnectTimeout(httpClientTimeout);
+
+        if (bitbucketFetcherConfiguration.isUseSystemProxy()) {
+            ProxyOptions proxyOptions = new ProxyOptions();
+            proxyOptions.setType(ProxyType.valueOf(httpClientProxyType));
+            if (HTTPS_SCHEME.equals(requestUri.getScheme())) {
+                proxyOptions.setHost(httpClientProxyHttpsHost);
+                proxyOptions.setPort(httpClientProxyHttpsPort);
+                proxyOptions.setUsername(httpClientProxyHttpsUsername);
+                proxyOptions.setPassword(httpClientProxyHttpsPassword);
+            } else {
+                proxyOptions.setHost(httpClientProxyHttpHost);
+                proxyOptions.setPort(httpClientProxyHttpPort);
+                proxyOptions.setUsername(httpClientProxyHttpUsername);
+                proxyOptions.setPassword(httpClientProxyHttpPassword);
+            }
+            options.setProxyOptions(proxyOptions);
+        }
 
         final HttpClient httpClient = vertx.createHttpClient(options);
 
@@ -168,7 +209,7 @@ public class BitbucketFetcher implements Fetcher {
             // Follow redirect since Gitlab may return a 3xx status code
             request.setFollowRedirects(true);
 
-            request.setTimeout(GLOBAL_TIMEOUT);
+            request.setTimeout(httpClientTimeout);
 
             if (bitbucketFetcherConfiguration.getLogin() != null && bitbucketFetcherConfiguration.getPassword() != null) {
                 String encoding = Base64.getEncoder().encodeToString(

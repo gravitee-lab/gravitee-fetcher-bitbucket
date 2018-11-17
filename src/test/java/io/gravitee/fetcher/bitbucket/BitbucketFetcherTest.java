@@ -20,6 +20,7 @@ import io.gravitee.fetcher.api.FetcherException;
 import io.vertx.core.Vertx;
 import org.junit.Rule;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -53,6 +54,7 @@ public class BitbucketFetcherTest {
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
         BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
         fetcher.setVertx(Vertx.vertx());
 
         InputStream fetch = fetcher.fetch();
@@ -72,6 +74,7 @@ public class BitbucketFetcherTest {
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
         BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
         fetcher.setVertx(Vertx.vertx());
 
         InputStream fetch = fetcher.fetch();
@@ -94,6 +97,7 @@ public class BitbucketFetcherTest {
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
         BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
         fetcher.setVertx(Vertx.vertx());
 
         InputStream fetch = fetcher.fetch();
