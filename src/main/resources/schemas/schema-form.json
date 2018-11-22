@@ -8,6 +8,11 @@
       "type": "string",
       "default": "https://api.bitbucket.org/2.0"
     },
+    "useSystemProxy": {
+      "title": "Use system proxy",
+      "description": "Use the system proxy configured by your administrator.",
+      "type": "boolean"
+    },
     "username": {
       "title": "Username",
       "description": "Username or organization",

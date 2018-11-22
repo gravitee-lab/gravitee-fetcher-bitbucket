@@ -36,6 +36,8 @@ public class BitbucketFetcherConfiguration implements FetcherConfiguration {
 
     private String password;
 
+    private boolean useSystemProxy;
+
     public String getBitbucketUrl() {
         return bitbucketUrl;
     }
@@ -90,5 +92,13 @@ public class BitbucketFetcherConfiguration implements FetcherConfiguration {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public boolean isUseSystemProxy() {
+        return useSystemProxy;
+    }
+
+    public void setUseSystemProxy(boolean useSystemProxy) {
+        this.useSystemProxy = useSystemProxy;
     }
 }
