@@ -84,13 +84,13 @@ public class BitbucketFetcher implements Fetcher {
                 || bitbucketFetcherConfiguration.getBitbucketUrl() == null
                 || bitbucketFetcherConfiguration.getRepository() == null
                 || bitbucketFetcherConfiguration.getUsername() == null) {
-            throw new FetcherException("Some configuration attributes are null", null);
+            throw new FetcherException("Some required configuration attributes are missing.", null);
         }
 
         try {
             Buffer buffer = fetchContent().join();
             if (buffer == null || buffer.length() == 0) {
-                logger.warn("Something goes wrong, Bitbucket responds with a status 200 but the content is null.");
+                logger.warn("Something goes wrong, Bitbucket responds with a status 200 but the content is empty.");
                 return null;
             }
 
