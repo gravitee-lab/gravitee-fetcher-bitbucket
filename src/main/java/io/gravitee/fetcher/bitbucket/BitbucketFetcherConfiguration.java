@@ -1,4 +1,5 @@
-package io.gravitee.fetcher.bitbucket; /**
+package io.gravitee.fetcher.bitbucket;
+/**
  * Copyright (C) 2015 The Gravitee team (http://gravitee.io)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +14,6 @@ package io.gravitee.fetcher.bitbucket; /**
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import io.gravitee.fetcher.api.FetcherConfiguration;
 
 /**
@@ -23,20 +23,14 @@ import io.gravitee.fetcher.api.FetcherConfiguration;
 public class BitbucketFetcherConfiguration implements FetcherConfiguration {
 
     private String bitbucketUrl;
-
     private String username;
-
     private String repository;
-
     private String branchOrTag;
-
     private String filepath;
-
     private String login;
-
     private String password;
-
     private boolean useSystemProxy;
+    private String editLink;
 
     public String getBitbucketUrl() {
         return bitbucketUrl;
@@ -100,5 +94,13 @@ public class BitbucketFetcherConfiguration implements FetcherConfiguration {
 
     public void setUseSystemProxy(boolean useSystemProxy) {
         this.useSystemProxy = useSystemProxy;
+    }
+
+    public String getEditLink() {
+        return editLink;
+    }
+
+    public void setEditLink(String editLink) {
+        this.editLink = editLink;
     }
 }
