@@ -18,13 +18,13 @@ package io.gravitee.fetcher.bitbucket;
 import com.github.tomakehurst.wiremock.junit.WireMockRule;
 import io.gravitee.fetcher.api.FetcherException;
 import io.vertx.core.Vertx;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
@@ -41,6 +41,15 @@ public class BitbucketFetcherTest {
     @Rule
     public WireMockRule wireMockRule = new WireMockRule(wireMockConfig().dynamicPort());
 
+    private BitbucketFetcher fetcher = new BitbucketFetcher(null);
+
+    private Vertx vertx = Vertx.vertx();
+
+    @Before
+    public void init() {
+        ReflectionTestUtils.setField(fetcher, "vertx", vertx);
+    }
+
     @Test
     public void shouldNotFetchWithoutContent() throws FetcherException {
         stubFor(get(urlEqualTo("/2.0/repositories/MyUserName/MyRepo/src/MyBranch/path/to/file"))
@@ -53,11 +62,10 @@ public class BitbucketFetcherTest {
         config.setBitbucketUrl("http://localhost:" + wireMockRule.port() + "/2.0");
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
-        BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "bitbucketFetcherConfiguration", config);
         ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
-        fetcher.setVertx(Vertx.vertx());
 
-        InputStream fetch = fetcher.fetch();
+        InputStream fetch = fetcher.fetch().getContent();
 
         assertThat(fetch).isNull();
     }
@@ -73,11 +81,10 @@ public class BitbucketFetcherTest {
         config.setBitbucketUrl("http://localhost:" + wireMockRule.port() + "/2.0");
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
-        BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "bitbucketFetcherConfiguration", config);
         ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
-        fetcher.setVertx(Vertx.vertx());
 
-        InputStream fetch = fetcher.fetch();
+        InputStream fetch = fetcher.fetch().getContent();
 
         assertThat(fetch).isNull();
     }
@@ -96,11 +103,10 @@ public class BitbucketFetcherTest {
         config.setBitbucketUrl("http://localhost:" + wireMockRule.port() + "/2.0");
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
-        BitbucketFetcher fetcher = new BitbucketFetcher(config);
+        ReflectionTestUtils.setField(fetcher, "bitbucketFetcherConfiguration", config);
         ReflectionTestUtils.setField(fetcher, "httpClientTimeout", 1_000);
-        fetcher.setVertx(Vertx.vertx());
 
-        InputStream fetch = fetcher.fetch();
+        InputStream fetch = fetcher.fetch().getContent();
 
         assertThat(fetch).isNotNull();
         int n = fetch.available();
@@ -125,8 +131,7 @@ public class BitbucketFetcherTest {
         config.setBitbucketUrl("http://localhost:" + wireMockRule.port() + "/2.0");
         config.setBranchOrTag("MyBranch");
         config.setRepository("MyRepo");
-        BitbucketFetcher fetcher = new BitbucketFetcher(config);
-        fetcher.setVertx(Vertx.vertx());
+        ReflectionTestUtils.setField(fetcher, "bitbucketFetcherConfiguration", config);
 
         try {
             fetcher.fetch();

@@ -1,4 +1,4 @@
-package io.gravitee.fetcher.bitbucket; /**
+/**
  * Copyright (C) 2015 The Gravitee team (http://gravitee.io)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +13,10 @@ package io.gravitee.fetcher.bitbucket; /**
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package io.gravitee.fetcher.bitbucket;
 
 import io.gravitee.common.http.HttpStatusCode;
+import io.gravitee.fetcher.api.Resource;
 import io.gravitee.fetcher.api.Fetcher;
 import io.gravitee.fetcher.api.FetcherException;
 import io.gravitee.fetcher.bitbucket.vertx.VertxCompletableFuture;
@@ -31,10 +33,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -79,26 +81,45 @@ public class BitbucketFetcher implements Fetcher {
     }
 
     @Override
-    public InputStream fetch() throws FetcherException {
+    public Resource fetch() throws FetcherException {
+        checkRequiredFields();
+        try {
+            Buffer buffer = fetchContent().join();
+            final Resource resource = new Resource();
+            if (buffer == null || buffer.length() == 0) {
+                logger.warn("Something goes wrong, Bitbucket responds with a status 200 but the content is empty.");
+            } else {
+                resource.setContent(new ByteArrayInputStream(buffer.getBytes()));
+                final HashMap<String, Object> metadata = new HashMap<>(1);
+                metadata.put(EDIT_URL_PROPERTY_KEY, buildEditUrl());
+                metadata.put(PROVIDER_NAME_PROPERTY_KEY, "Bitbucket");
+                resource.setMetadata(metadata);
+            }
+            return resource;
+        } catch (Exception ex) {
+            logger.error(ex.getMessage(), ex);
+            throw new FetcherException("Unable to fetch Bitbucket content (" + ex.getMessage() + ")", ex);
+        }
+    }
+
+    private void checkRequiredFields() throws FetcherException {
         if (bitbucketFetcherConfiguration.getBranchOrTag() == null
                 || bitbucketFetcherConfiguration.getBitbucketUrl() == null
                 || bitbucketFetcherConfiguration.getRepository() == null
                 || bitbucketFetcherConfiguration.getUsername() == null) {
             throw new FetcherException("Some required configuration attributes are missing.", null);
         }
+    }
 
-        try {
-            Buffer buffer = fetchContent().join();
-            if (buffer == null || buffer.length() == 0) {
-                logger.warn("Something goes wrong, Bitbucket responds with a status 200 but the content is empty.");
-                return null;
-            }
-
-            return new ByteArrayInputStream(buffer.getBytes());
-        } catch (Exception ex) {
-            logger.error(ex.getMessage(), ex);
-            throw new FetcherException("Unable to fetch Bitbucket content (" + ex.getMessage() + ")", ex);
-        }
+    private String buildEditUrl() throws FetcherException {
+        checkRequiredFields();
+        final String bitbucketUrl = bitbucketFetcherConfiguration.getBitbucketUrl().replace("api.", "");
+        return bitbucketUrl.substring(0, bitbucketUrl.lastIndexOf('/'))
+                + '/' + bitbucketFetcherConfiguration.getUsername()
+                + '/' + bitbucketFetcherConfiguration.getRepository()
+                + "/src/" + (bitbucketFetcherConfiguration.getBranchOrTag() == null ?
+                "master" : bitbucketFetcherConfiguration.getBranchOrTag())
+                + '/' +  bitbucketFetcherConfiguration.getFilepath() + "?spa=0&mode=edit";
     }
 
     private String getEncodedRequestUrl() throws UnsupportedEncodingException {
@@ -248,9 +269,5 @@ public class BitbucketFetcher implements Fetcher {
         }
 
         return future;
-    }
-
-    public void setVertx(Vertx vertx) {
-        this.vertx = vertx;
     }
 }
